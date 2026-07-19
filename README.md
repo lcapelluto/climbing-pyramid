@@ -1,3 +1,8 @@
+# Built with Claude Code. I have not reviewed the code.
+With this disclaimer in mind, you are welcome to use this website application! I built it for my own use.
+
+https://climbingpyramid.web.app/
+
 # Climbing pyramid tracker
 
 Standalone version of the training pyramid tracker: Firebase Auth (email/password)
