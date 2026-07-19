@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { ensureUserDoc, subscribeUserData, saveClimbs, savePyramidConfig } from "../lib/userData";
@@ -8,14 +8,18 @@ import {
   GRADES,
   LOG_GRADES,
   gIndex,
-  TYPES,
+  ROPE_TYPES,
   typeLabel,
   NAV_TABS,
   CHART_COLORS,
   OUTCOMES,
+  BOULDER_GRADES,
+  BOULDER_QUICK_GRADES,
+  BOULDER_OUTCOMES,
   DEFAULT_CONFIG,
   todayStr,
   sixMonthsAgoStr,
+  threeMonthsAgoStr,
   computeSlots,
 } from "../lib/climbLogic";
 
@@ -29,14 +33,24 @@ export default function PyramidTracker({ uid }) {
   const [logDate, setLogDate] = useState(todayStr());
   const [logOutcome, setLogOutcome] = useState("send");
   const [filterMode, setFilterMode] = useState("recent");
+  const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
   const [showLevel, setShowLevel] = useState(false);
   const [levelGrade, setLevelGrade] = useState("9");
   const [climbsPage, setClimbsPage] = useState(0);
   const CLIMBS_PAGE_SIZE = 10;
 
+  const isAnalytics = activeType === "analytics";
+  const isBoulder = activeType === "boulder";
+
   useEffect(() => {
     setClimbsPage(0);
   }, [activeType]);
+
+  useEffect(() => {
+    const grades = isBoulder ? BOULDER_GRADES : LOG_GRADES;
+    setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
+    setLogOutcome("send");
+  }, [activeType, isBoulder]);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -97,22 +111,29 @@ export default function PyramidTracker({ uid }) {
     persistConfig({ ...config, [activeType]: { ...pyramid, baseGrade: GRADES[idx + 1] } });
   }
 
-  const isAnalytics = activeType === "analytics";
-  const pyramid = config && !isAnalytics ? config[activeType] : null;
+  const pyramid = config && !isAnalytics && !isBoulder ? config[activeType] : null;
 
+  // Analytics only covers rope types and only counts sends (matches the pyramid view's definition of progress).
   const chartData = useMemo(() => {
     if (!climbs) return [];
-    const gradesPresent = GRADES.filter((g) => climbs.some((c) => c.grade === g));
-    return gradesPresent.map((g) => {
+    const sends = climbs.filter((c) => c.outcome === "send" && c.type !== "boulder");
+    const gradesPresent = GRADES.filter((g) => sends.some((c) => c.grade === g));
+    if (gradesPresent.length === 0) return [];
+    // Fill in every grade between the lowest and highest logged send, even ones
+    // with zero climbs, so the chart shows a continuous range rather than gaps.
+    const minIdx = gIndex(gradesPresent[0]);
+    const maxIdx = gIndex(gradesPresent[gradesPresent.length - 1]);
+    return GRADES.slice(minIdx, maxIdx + 1).map((g) => {
       const row = { grade: g };
-      TYPES.forEach((t) => {
-        row[t.key] = climbs.filter((c) => c.grade === g && c.type === t.key).length;
+      ROPE_TYPES.forEach((t) => {
+        row[t.key] = sends.filter((c) => c.grade === g && c.type === t.key).length;
       });
       return row;
     });
   }, [climbs]);
 
   const cutoff = useMemo(() => sixMonthsAgoStr(), []);
+  const cutoffBoulder = useMemo(() => threeMonthsAgoStr(), []);
   const filteredClimbs = useMemo(() => {
     if (!climbs) return [];
     return filterMode === "all" ? climbs : climbs.filter((c) => c.date >= cutoff);
@@ -146,8 +167,27 @@ export default function PyramidTracker({ uid }) {
   const allClimbsForType = climbs
     ? [...climbs]
         .filter((c) => c.type === activeType)
+        .filter((c) => !isBoulder || boulderFilterMode === "all" || c.date >= cutoffBoulder)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
     : [];
+
+  // Unlike the rope pyramid's 6mo filter (which never touches the climb list), the boulder
+  // 3mo/All toggle scopes both the chart and the list below it — an intentional difference.
+  const boulderChartData = useMemo(() => {
+    if (!isBoulder) return [];
+    // Only show the range of grades actually logged (lowest through highest),
+    // not the full VB-V9 scale — gaps within that range still show as zero.
+    const gradesLogged = BOULDER_GRADES.filter((g) => allClimbsForType.some((c) => c.grade === g));
+    if (gradesLogged.length === 0) return [];
+    const minIdx = BOULDER_GRADES.indexOf(gradesLogged[0]);
+    const maxIdx = BOULDER_GRADES.indexOf(gradesLogged[gradesLogged.length - 1]);
+    return BOULDER_GRADES.slice(minIdx, maxIdx + 1).map((g) => ({
+      grade: g,
+      send: allClimbsForType.filter((c) => c.grade === g && c.outcome === "send").length,
+      attempt: allClimbsForType.filter((c) => c.grade === g && c.outcome === "attempt").length,
+    }));
+  }, [allClimbsForType, isBoulder]);
+
   const climbsPageCount = Math.max(1, Math.ceil(allClimbsForType.length / CLIMBS_PAGE_SIZE));
   const pagedClimbs = allClimbsForType.slice(
     climbsPage * CLIMBS_PAGE_SIZE,
@@ -177,7 +217,11 @@ export default function PyramidTracker({ uid }) {
             <LogOut size={16} />
           </button>
           <div style={S.title}>
-            {isAnalytics ? "Climb analytics" : `${topGrade} ${typeLabel(activeType)} pyramid`}
+            {isAnalytics
+              ? "Climb analytics"
+              : isBoulder
+              ? "Boulder climbs"
+              : `${topGrade} ${typeLabel(activeType)} pyramid`}
           </div>
         </div>
 
@@ -191,7 +235,7 @@ export default function PyramidTracker({ uid }) {
         {isAnalytics ? (
           <div style={{ ...S.card, marginBottom: 90 }}>
             <div style={S.legendRow}>
-              {TYPES.map((t) => (
+              {ROPE_TYPES.map((t) => (
                 <div key={t.key} style={S.legendItem}>
                   <span style={{ ...S.dot, background: CHART_COLORS[t.key] }} />
                   <span style={S.legendLabel}>{t.label}</span>
@@ -219,12 +263,8 @@ export default function PyramidTracker({ uid }) {
                       width={36}
                       label={{ value: "climbs", angle: -90, position: "insideLeft", fill: C.textMuted, fontSize: 11 }}
                     />
-                    <Tooltip
-                      contentStyle={{ background: C.card, border: `1px solid ${C.cardBorder}`, borderRadius: 8, fontSize: 12 }}
-                      labelStyle={{ color: C.text, fontWeight: 600 }}
-                    />
-                    <Bar dataKey="redpoint" stackId="climbs" fill={CHART_COLORS.redpoint} name="Redpoint" barSize={16} />
-                    <Bar dataKey="lead" stackId="climbs" fill={CHART_COLORS.lead} name="Lead" barSize={16} />
+                    <Bar dataKey="redpoint" stackId="climbs" fill={CHART_COLORS.redpoint} name="Redpoint" barSize={16} activeBar={false} />
+                    <Bar dataKey="lead" stackId="climbs" fill={CHART_COLORS.lead} name="Lead" barSize={16} activeBar={false} />
                     <Bar
                       dataKey="toprope"
                       stackId="climbs"
@@ -232,6 +272,7 @@ export default function PyramidTracker({ uid }) {
                       name="Top rope"
                       barSize={16}
                       radius={[4, 4, 0, 0]}
+                      activeBar={false}
                     />
                   </BarChart>
                 </ResponsiveContainer>
@@ -240,60 +281,122 @@ export default function PyramidTracker({ uid }) {
           </div>
         ) : (
           <>
-            <div style={{ ...S.card, position: "relative" }}>
-              <div style={S.filterToggle}>
-                {[
-                  { key: "recent", label: "6 mo" },
-                  { key: "all", label: "All" },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setFilterMode(opt.key)}
-                    style={{
-                      ...S.filterToggleBtn,
-                      background: filterMode === opt.key ? C.gold : "transparent",
-                      color: filterMode === opt.key ? "#FFFDF8" : C.textMuted,
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div style={S.pyramidWrap}>
-                {[...tiers].reverse().map((t) => (
-                  <div key={t.grade} style={S.tierRow}>
-                    <div style={S.tierGradeLabel}>{t.grade}</div>
-                    <div style={S.boxGrid}>
-                      {t.slots.map((slot, i) => {
-                        const isGreen = slot && slot.color === "green";
-                        const bg = !slot ? C.inputBg : slot.color === "green" ? C.green : slot.color === "red" ? C.red : C.yellow;
-                        const border = !slot ? C.cardBorder : bg;
-                        return (
-                          <button
-                            key={i}
-                            aria-label={isGreen ? `${t.grade} sent` : `Log a send at ${t.grade}`}
-                            onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), "send")}
-                            style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
-                          >
-                            {slot && slot.color === "green" && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
-                            {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {complete && (
-                <div style={S.advanceBox}>
-                  <div style={S.advanceText}>Pyramid complete. Ready to move up to {nextTopGrade}?</div>
-                  <button style={S.advanceBtn} onClick={advance}>
-                    Advance pyramid
-                  </button>
+            {!isBoulder && (
+              <div style={{ ...S.card, position: "relative" }}>
+                <div style={S.filterToggle}>
+                  {[
+                    { key: "recent", label: "6 mo" },
+                    { key: "all", label: "All" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setFilterMode(opt.key)}
+                      style={{
+                        ...S.filterToggleBtn,
+                        background: filterMode === opt.key ? C.gold : "transparent",
+                        color: filterMode === opt.key ? "#FFFDF8" : C.textMuted,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
+                <div style={S.pyramidWrap}>
+                  {[...tiers].reverse().map((t) => (
+                    <div key={t.grade} style={S.tierRow}>
+                      <div style={S.tierGradeLabel}>{t.grade}</div>
+                      <div style={S.boxGrid}>
+                        {t.slots.map((slot, i) => {
+                          const isGreen = slot && slot.color === "green";
+                          const bg = !slot ? C.inputBg : slot.color === "green" ? C.green : slot.color === "red" ? C.red : C.yellow;
+                          const border = !slot ? C.cardBorder : bg;
+                          return (
+                            <button
+                              key={i}
+                              aria-label={isGreen ? `${t.grade} sent` : `Log a send at ${t.grade}`}
+                              onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), "send")}
+                              style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
+                            >
+                              {slot && slot.color === "green" && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
+                              {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {complete && (
+                  <div style={S.advanceBox}>
+                    <div style={S.advanceText}>Pyramid complete. Ready to move up to {nextTopGrade}?</div>
+                    <button style={S.advanceBtn} onClick={advance}>
+                      Advance pyramid
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isBoulder && (
+              <div style={{ ...S.card, position: "relative" }}>
+                <div style={S.filterToggle}>
+                  {[
+                    { key: "recent", label: "3 mo" },
+                    { key: "all", label: "All" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setBoulderFilterMode(opt.key)}
+                      style={{
+                        ...S.filterToggleBtn,
+                        background: boulderFilterMode === opt.key ? C.gold : "transparent",
+                        color: boulderFilterMode === opt.key ? "#FFFDF8" : C.textMuted,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {boulderChartData.every((r) => r.send === 0 && r.attempt === 0) ? (
+                  <div style={{ color: C.textMuted, fontSize: 14, marginTop: 8 }}>
+                    Nothing logged yet. Tap a grade below to start.
+                  </div>
+                ) : (
+                  <div style={{ width: "100%", height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={boulderChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                        <CartesianGrid stroke={C.cardBorder} vertical={false} />
+                        <XAxis dataKey="grade" tick={{ fontSize: 11, fill: C.textMuted }} interval={0} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: C.textMuted }} width={28} />
+                        <Bar dataKey="send" stackId="boulders" fill={C.green} name="Send" barSize={18} activeBar={false} />
+                        <Bar
+                          dataKey="attempt"
+                          stackId="boulders"
+                          fill={C.yellow}
+                          name="Attempt"
+                          barSize={18}
+                          radius={[4, 4, 0, 0]}
+                          activeBar={false}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div style={S.quickGradeRow}>
+                  {BOULDER_QUICK_GRADES.map((g) => (
+                    <button
+                      key={g}
+                      aria-label={`Log a send at ${g}`}
+                      style={S.quickGradeBtn}
+                      onClick={() => logClimb(g, activeType, todayStr(), "send")}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <button style={S.logToggle} onClick={() => setShowLog((v) => !v)}>
               <span>Log a specific grade</span>
@@ -305,7 +408,7 @@ export default function PyramidTracker({ uid }) {
                 <div style={S.formRow}>
                   <label style={S.formLabel}>Grade</label>
                   <select style={S.select} value={logGrade} onChange={(e) => setLogGrade(e.target.value)}>
-                    {LOG_GRADES.map((g) => (
+                    {(isBoulder ? BOULDER_GRADES : LOG_GRADES).map((g) => (
                       <option key={g} value={g}>
                         {g}
                       </option>
@@ -325,7 +428,7 @@ export default function PyramidTracker({ uid }) {
                 <div style={{ marginBottom: 10 }}>
                   <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
                   <div style={S.segmented}>
-                    {OUTCOMES.map((o) => {
+                    {(isBoulder ? BOULDER_OUTCOMES : OUTCOMES).map((o) => {
                       const active = logOutcome === o.key;
                       const color = o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
                       return (
@@ -352,12 +455,14 @@ export default function PyramidTracker({ uid }) {
               </div>
             )}
 
-            <button style={S.logToggle} onClick={() => setShowLevel((v) => !v)}>
-              <span>Set pyramid level</span>
-              {showLevel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+            {!isBoulder && (
+              <button style={S.logToggle} onClick={() => setShowLevel((v) => !v)}>
+                <span>Set pyramid level</span>
+                {showLevel ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            )}
 
-            {showLevel && (
+            {!isBoulder && showLevel && (
               <div style={S.card}>
                 <div style={S.formRow}>
                   <label style={S.formLabel}>Top grade</label>
@@ -378,7 +483,9 @@ export default function PyramidTracker({ uid }) {
             <div style={S.sectionLabel}>{typeLabel(activeType).toLowerCase()} climbs</div>
             <div style={{ ...S.card, marginBottom: 14 }}>
               {allClimbsForType.length === 0 ? (
-                <div style={{ color: C.textMuted, fontSize: 14 }}>Nothing logged yet. Tap a box above to start.</div>
+                <div style={{ color: C.textMuted, fontSize: 14 }}>
+                  Nothing logged yet. Tap a {isBoulder ? "grade" : "box"} above to start.
+                </div>
               ) : (
                 pagedClimbs.map((c) => (
                   <div key={c.id} style={S.climbRow}>
@@ -431,7 +538,7 @@ export default function PyramidTracker({ uid }) {
             onClick={() => setActiveType(t.key)}
             style={{ ...S.tabBtn, color: activeType === t.key ? C.gold : C.textMuted }}
           >
-            {t.label}
+            {t.navLabel || t.label}
           </button>
         ))}
       </div>
@@ -524,6 +631,7 @@ const S = {
     position: "absolute",
     top: 12,
     right: 12,
+    zIndex: 1,
     display: "flex",
     gap: 2,
     background: C.inputBg,
@@ -555,6 +663,24 @@ const S = {
     fontWeight: 600,
     cursor: "pointer",
     width: "100%",
+  },
+  quickGradeRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 16,
+  },
+  quickGradeBtn: {
+    minWidth: 52,
+    padding: "10px 8px",
+    borderRadius: 10,
+    border: `1px solid ${C.cardBorder}`,
+    background: C.inputBg,
+    color: C.text,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
   },
   logToggle: {
     display: "flex",
