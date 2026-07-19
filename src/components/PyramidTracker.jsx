@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Rectangle } from "recharts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { ensureUserDoc, subscribeUserData, saveClimbs, savePyramidConfig } from "../lib/userData";
@@ -23,6 +23,18 @@ import {
   computeSlots,
 } from "../lib/climbLogic";
 
+// Bars are stacked per grade column, so which series forms the visible top of the bar
+// depends on which series have nonzero counts in that specific column. This shape rounds
+// only the top of the *last* key (in stack order, bottom to top) with a nonzero value.
+function endRoundedBarShape(stackOrder, dataKey) {
+  return function BarShape(props) {
+    const { x, y, width, height, fill, payload } = props;
+    const lastActiveKey = [...stackOrder].reverse().find((k) => (payload[k] || 0) > 0);
+    const rounded = lastActiveKey === dataKey;
+    return <Rectangle x={x} y={y} width={width} height={height} fill={fill} radius={rounded ? [4, 4, 0, 0] : 0} />;
+  };
+}
+
 export default function PyramidTracker({ uid }) {
   const [climbs, setClimbs] = useState(null);
   const [config, setConfig] = useState(null);
@@ -34,6 +46,7 @@ export default function PyramidTracker({ uid }) {
   const [logOutcome, setLogOutcome] = useState("send");
   const [filterMode, setFilterMode] = useState("recent");
   const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
+  const [chartFilter, setChartFilter] = useState(() => new Set());
   const [showLevel, setShowLevel] = useState(false);
   const [levelGrade, setLevelGrade] = useState("9");
   const [climbsPage, setClimbsPage] = useState(0);
@@ -113,10 +126,24 @@ export default function PyramidTracker({ uid }) {
 
   const pyramid = config && !isAnalytics && !isBoulder ? config[activeType] : null;
 
+  // Empty chartFilter means "no filter" (show every type); a non-empty set restricts to those types.
+  const visibleChartTypes =
+    chartFilter.size === 0 ? ROPE_TYPES.map((t) => t.key) : ROPE_TYPES.filter((t) => chartFilter.has(t.key)).map((t) => t.key);
+
+  function toggleChartFilter(key) {
+    setChartFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   // Analytics only covers rope types and only counts sends (matches the pyramid view's definition of progress).
   const chartData = useMemo(() => {
     if (!climbs) return [];
-    const sends = climbs.filter((c) => c.outcome === "send" && c.type !== "boulder");
+    const visible = chartFilter.size === 0 ? ROPE_TYPES.map((t) => t.key) : ROPE_TYPES.filter((t) => chartFilter.has(t.key)).map((t) => t.key);
+    const sends = climbs.filter((c) => c.outcome === "send" && visible.includes(c.type));
     const gradesPresent = GRADES.filter((g) => sends.some((c) => c.grade === g));
     if (gradesPresent.length === 0) return [];
     // Fill in every grade between the lowest and highest logged send, even ones
@@ -130,7 +157,7 @@ export default function PyramidTracker({ uid }) {
       });
       return row;
     });
-  }, [climbs]);
+  }, [climbs, chartFilter]);
 
   const cutoff = useMemo(() => sixMonthsAgoStr(), []);
   const cutoffBoulder = useMemo(() => threeMonthsAgoStr(), []);
@@ -235,12 +262,19 @@ export default function PyramidTracker({ uid }) {
         {isAnalytics ? (
           <div style={{ ...S.card, marginBottom: 90 }}>
             <div style={S.legendRow}>
-              {ROPE_TYPES.map((t) => (
-                <div key={t.key} style={S.legendItem}>
-                  <span style={{ ...S.dot, background: CHART_COLORS[t.key] }} />
-                  <span style={S.legendLabel}>{t.label}</span>
-                </div>
-              ))}
+              {ROPE_TYPES.map((t) => {
+                const active = visibleChartTypes.includes(t.key);
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => toggleChartFilter(t.key)}
+                    style={{ ...S.legendItem, opacity: active ? 1 : 0.4 }}
+                  >
+                    <span style={{ ...S.dot, background: CHART_COLORS[t.key] }} />
+                    <span style={S.legendLabel}>{t.label}</span>
+                  </button>
+                );
+              })}
             </div>
             {chartData.length === 0 ? (
               <div style={{ color: C.textMuted, fontSize: 14 }}>Nothing logged yet. Log a climb to see your chart.</div>
@@ -263,17 +297,21 @@ export default function PyramidTracker({ uid }) {
                       width={36}
                       label={{ value: "climbs", angle: -90, position: "insideLeft", fill: C.textMuted, fontSize: 11 }}
                     />
-                    <Bar dataKey="redpoint" stackId="climbs" fill={CHART_COLORS.redpoint} name="Redpoint" barSize={16} activeBar={false} />
-                    <Bar dataKey="lead" stackId="climbs" fill={CHART_COLORS.lead} name="Lead" barSize={16} activeBar={false} />
-                    <Bar
-                      dataKey="toprope"
-                      stackId="climbs"
-                      fill={CHART_COLORS.toprope}
-                      name="Top rope"
-                      barSize={16}
-                      radius={[4, 4, 0, 0]}
-                      activeBar={false}
-                    />
+                    {ROPE_TYPES.map((t) => (
+                      <Bar
+                        key={t.key}
+                        dataKey={t.key}
+                        stackId="climbs"
+                        fill={CHART_COLORS[t.key]}
+                        name={t.label}
+                        barSize={16}
+                        shape={endRoundedBarShape(
+                          ROPE_TYPES.map((rt) => rt.key),
+                          t.key
+                        )}
+                        activeBar={false}
+                      />
+                    ))}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -369,14 +407,22 @@ export default function PyramidTracker({ uid }) {
                         <CartesianGrid stroke={C.cardBorder} vertical={false} />
                         <XAxis dataKey="grade" tick={{ fontSize: 11, fill: C.textMuted }} interval={0} />
                         <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: C.textMuted }} width={28} />
-                        <Bar dataKey="send" stackId="boulders" fill={C.green} name="Send" barSize={18} activeBar={false} />
+                        <Bar
+                          dataKey="send"
+                          stackId="boulders"
+                          fill={C.green}
+                          name="Send"
+                          barSize={18}
+                          shape={endRoundedBarShape(["send", "attempt"], "send")}
+                          activeBar={false}
+                        />
                         <Bar
                           dataKey="attempt"
                           stackId="boulders"
                           fill={C.yellow}
                           name="Attempt"
                           barSize={18}
-                          radius={[4, 4, 0, 0]}
+                          shape={endRoundedBarShape(["send", "attempt"], "attempt")}
                           activeBar={false}
                         />
                       </BarChart>
@@ -756,7 +802,17 @@ const S = {
   },
   dot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   legendRow: { display: "flex", gap: 16, marginBottom: 14 },
-  legendItem: { display: "flex", alignItems: "center", gap: 6 },
+  legendItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    background: "transparent",
+    border: "none",
+    padding: 0,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    transition: "opacity 0.15s ease",
+  },
   legendLabel: { fontSize: 12, color: C.textMuted },
   climbGrade: { fontWeight: 600, width: 40 },
   climbDate: { color: C.textMuted, flex: 1 },
