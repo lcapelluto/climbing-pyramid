@@ -67,13 +67,18 @@ export function threeMonthsAgoStr() {
 // derive box slot state for a tier from the full climb log, in chronological order.
 // sends overwrite the oldest non-green slot if one exists, else fill the next empty slot.
 // take/worked/attempt fill the next empty slot with their color.
+//
+// Redpoints are lead sends, so redpoint climbs also count toward the lead pyramid.
+// And on lead, "take"/"worked" are the normal successful outcome (not a partial
+// attempt like they are for redpoint/toprope), so they fill green like a send would.
 export function computeSlots(grade, type, required, climbsList) {
+  const isLead = type === "lead";
   const relevant = climbsList
-    .filter((c) => c.grade === grade && c.type === type)
+    .filter((c) => c.grade === grade && (c.type === type || (isLead && c.type === "redpoint")))
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const slots = Array(required).fill(null);
   for (const c of relevant) {
-    if (c.outcome === "send") {
+    if (c.outcome === "send" || (isLead && (c.outcome === "take" || c.outcome === "worked"))) {
       let idx = slots.findIndex((s) => s && s.color !== "green");
       if (idx === -1) idx = slots.findIndex((s) => s === null);
       if (idx !== -1) slots[idx] = { color: "green", climbId: c.id };

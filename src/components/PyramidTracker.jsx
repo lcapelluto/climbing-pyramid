@@ -70,7 +70,8 @@ export default function PyramidTracker({ uid }) {
   useEffect(() => {
     const grades = isBoulder ? BOULDER_GRADES : LOG_GRADES;
     setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
-    setLogOutcome("send");
+    // Lead climbs are usually taken, not redpointed, so default the form to "Take".
+    setLogOutcome(activeType === "lead" ? "take" : "send");
     setLogNotes("");
   }, [activeType, isBoulder]);
 
@@ -247,7 +248,8 @@ export default function PyramidTracker({ uid }) {
 
   const allClimbsForType = climbs
     ? [...climbs]
-        .filter((c) => c.type === activeType)
+        // Redpoints are lead sends, so they also show up in the lead climbs list.
+        .filter((c) => c.type === activeType || (activeType === "lead" && c.type === "redpoint"))
         .filter((c) => !isBoulder || boulderFilterMode === "all" || c.date >= cutoffBoulder)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
     : [];
@@ -402,11 +404,12 @@ export default function PyramidTracker({ uid }) {
                           const isGreen = slot && slot.color === "green";
                           const bg = !slot ? C.inputBg : slot.color === "green" ? C.green : slot.color === "red" ? C.red : C.yellow;
                           const border = !slot ? C.cardBorder : bg;
+                          const boxOutcome = activeType === "lead" ? "take" : "send";
                           return (
                             <button
                               key={i}
-                              aria-label={isGreen ? `${t.grade} sent` : `Log a send at ${t.grade}`}
-                              onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), "send")}
+                              aria-label={isGreen ? `${t.grade} sent` : `Log a ${boxOutcome} at ${t.grade}`}
+                              onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
                               style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
                             >
                               {slot && slot.color === "green" && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
