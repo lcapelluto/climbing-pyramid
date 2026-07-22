@@ -54,6 +54,9 @@ export default function PyramidTracker({ uid }) {
 
   const isAnalytics = activeType === "analytics";
   const isBoulder = activeType === "boulder";
+  // Redpoints are lead sends with no takes — the outcome is always "send",
+  // so there's no result to choose (logOutcome resets to "send" on tab change).
+  const isRedpoint = activeType === "redpoint";
 
   useEffect(() => {
     setClimbsPage(0);
@@ -471,29 +474,31 @@ export default function PyramidTracker({ uid }) {
                     onChange={(e) => setLogDate(e.target.value)}
                   />
                 </div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
-                  <div style={S.segmented}>
-                    {(isBoulder ? BOULDER_OUTCOMES : OUTCOMES).map((o) => {
-                      const active = logOutcome === o.key;
-                      const color = o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
-                      return (
-                        <button
-                          key={o.key}
-                          onClick={() => setLogOutcome(o.key)}
-                          style={{
-                            ...S.segmentBtn,
-                            background: active ? color : "transparent",
-                            color: active ? "#F7F5F0" : C.textMuted,
-                            borderColor: active ? color : C.cardBorder,
-                          }}
-                        >
-                          {o.label}
-                        </button>
-                      );
-                    })}
+                {!isRedpoint && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
+                    <div style={S.segmented}>
+                      {(isBoulder ? BOULDER_OUTCOMES : OUTCOMES).map((o) => {
+                        const active = logOutcome === o.key;
+                        const color = o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
+                        return (
+                          <button
+                            key={o.key}
+                            onClick={() => setLogOutcome(o.key)}
+                            style={{
+                              ...S.segmentBtn,
+                              background: active ? color : "transparent",
+                              color: active ? "#F7F5F0" : C.textMuted,
+                              borderColor: active ? color : C.cardBorder,
+                            }}
+                          >
+                            {o.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
                 <button style={S.submitBtn} onClick={() => logClimb(logGrade, activeType, logDate, logOutcome)}>
                   <Plus size={16} />
                   Add climb
