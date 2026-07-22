@@ -44,6 +44,7 @@ export default function PyramidTracker({ uid }) {
   const [logGrade, setLogGrade] = useState("9");
   const [logDate, setLogDate] = useState(todayStr());
   const [logOutcome, setLogOutcome] = useState("send");
+  const [logNotes, setLogNotes] = useState("");
   const [filterMode, setFilterMode] = useState("recent");
   const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
   const [chartFilter, setChartFilter] = useState(() => new Set());
@@ -66,6 +67,7 @@ export default function PyramidTracker({ uid }) {
     const grades = isBoulder ? BOULDER_GRADES : LOG_GRADES;
     setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
     setLogOutcome("send");
+    setLogNotes("");
   }, [activeType, isBoulder]);
 
   useEffect(() => {
@@ -104,7 +106,14 @@ export default function PyramidTracker({ uid }) {
     }
   }
 
-  function logClimb(grade, type, date, outcome) {
+  const NOTES_MAX_LENGTH = 1000;
+
+  function logClimb(grade, type, date, outcome, notes = "") {
+    const trimmedNotes = notes.trim();
+    if (trimmedNotes.length > NOTES_MAX_LENGTH) {
+      setError(`Notes must be ${NOTES_MAX_LENGTH} characters or fewer.`);
+      return false;
+    }
     setError(null);
     const entry = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -113,7 +122,9 @@ export default function PyramidTracker({ uid }) {
       date,
       outcome,
     };
+    if (trimmedNotes) entry.notes = trimmedNotes;
     persistClimbs([...climbs, entry]);
+    return true;
   }
 
   function removeClimbById(id) {
@@ -499,7 +510,27 @@ export default function PyramidTracker({ uid }) {
                     </div>
                   </div>
                 )}
-                <button style={S.submitBtn} onClick={() => logClimb(logGrade, activeType, logDate, logOutcome)}>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <label style={S.formLabel}>Notes</label>
+                    <span style={S.notesCounter}>
+                      {logNotes.length}/{NOTES_MAX_LENGTH}
+                    </span>
+                  </div>
+                  <textarea
+                    style={S.textarea}
+                    value={logNotes}
+                    maxLength={NOTES_MAX_LENGTH}
+                    placeholder="Beta, conditions, how it felt…"
+                    onChange={(e) => setLogNotes(e.target.value)}
+                  />
+                </div>
+                <button
+                  style={S.submitBtn}
+                  onClick={() => {
+                    if (logClimb(logGrade, activeType, logDate, logOutcome, logNotes)) setLogNotes("");
+                  }}
+                >
                   <Plus size={16} />
                   Add climb
                 </button>
@@ -540,17 +571,20 @@ export default function PyramidTracker({ uid }) {
               ) : (
                 pagedClimbs.map((c) => (
                   <div key={c.id} style={S.climbRow}>
-                    <span
-                      style={{
-                        ...S.dot,
-                        background: c.outcome === "send" ? C.green : c.outcome === "attempt" ? C.red : C.yellow,
-                      }}
-                    />
-                    <span style={S.climbGrade}>{c.grade}</span>
-                    <span style={S.climbDate}>{c.date}</span>
-                    <button aria-label="Delete climb" style={S.deleteBtn} onClick={() => removeClimbById(c.id)}>
-                      <Trash2 size={14} />
-                    </button>
+                    <div style={S.climbRowMain}>
+                      <span
+                        style={{
+                          ...S.dot,
+                          background: c.outcome === "send" ? C.green : c.outcome === "attempt" ? C.red : C.yellow,
+                        }}
+                      />
+                      <span style={S.climbGrade}>{c.grade}</span>
+                      <span style={S.climbDate}>{c.date}</span>
+                      <button aria-label="Delete climb" style={S.deleteBtn} onClick={() => removeClimbById(c.id)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    {c.notes && <div style={S.climbNotes}>{c.notes}</div>}
                   </div>
                 ))
               )}
@@ -764,6 +798,18 @@ const S = {
     padding: "8px 10px",
     fontSize: 14,
   },
+  textarea: {
+    width: "100%",
+    background: C.inputBg,
+    color: C.text,
+    border: `1px solid ${C.cardBorder}`,
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontSize: 14,
+    resize: "vertical",
+    minHeight: 60,
+  },
+  notesCounter: { fontSize: 11, color: C.textMuted },
   segmented: { display: "flex", gap: 6 },
   segmentBtn: {
     flex: 1,
@@ -798,12 +844,18 @@ const S = {
     margin: "4px 4px 8px",
   },
   climbRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
     padding: "8px 0",
     borderBottom: `1px solid ${C.cardBorder}`,
     fontSize: 14,
+  },
+  climbRowMain: { display: "flex", alignItems: "center", gap: 10 },
+  climbNotes: {
+    marginTop: 4,
+    marginLeft: 18,
+    color: C.textMuted,
+    fontSize: 13,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
   },
   dot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
   legendRow: { display: "flex", gap: 16, marginBottom: 14 },
