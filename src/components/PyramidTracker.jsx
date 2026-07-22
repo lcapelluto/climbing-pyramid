@@ -616,7 +616,7 @@ export default function PyramidTracker({ uid }) {
               </div>
             )}
 
-            <div style={S.sectionLabel}>{typeLabel(activeType).toLowerCase()} climbs</div>
+            <div style={S.sectionLabel}>{isBoulder ? "boulders" : `${typeLabel(activeType).toLowerCase()} climbs`}</div>
             <div style={{ ...S.card, marginBottom: 14 }}>
               {allClimbsForType.length === 0 ? (
                 <div style={{ color: C.textMuted, fontSize: 14 }}>
