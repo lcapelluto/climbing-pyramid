@@ -21,6 +21,7 @@ import {
   sixMonthsAgoStr,
   threeMonthsAgoStr,
   computeSlots,
+  analyticsType,
 } from "../lib/climbLogic";
 
 // Bars are stacked per grade column, so which series forms the visible top of the bar
@@ -194,21 +195,25 @@ export default function PyramidTracker({ uid }) {
     });
   }
 
-  // Analytics only covers rope types and only counts sends (matches the pyramid view's definition of progress).
+  // Analytics only covers rope types and buckets each climb by analyticsType(), not raw
+  // c.type — a lead "send" counts as redpoint, a lead take/worked counts as lead, and a
+  // lead "attempt" is excluded (see analyticsType() for the full rationale).
   const chartData = useMemo(() => {
     if (!climbs) return [];
     const visible = chartFilter.size === 0 ? ROPE_TYPES.map((t) => t.key) : ROPE_TYPES.filter((t) => chartFilter.has(t.key)).map((t) => t.key);
-    const sends = climbs.filter((c) => c.outcome === "send" && visible.includes(c.type));
-    const gradesPresent = GRADES.filter((g) => sends.some((c) => c.grade === g));
+    const bucketed = climbs
+      .map((c) => ({ climb: c, bucket: analyticsType(c) }))
+      .filter(({ bucket }) => bucket && visible.includes(bucket));
+    const gradesPresent = GRADES.filter((g) => bucketed.some(({ climb }) => climb.grade === g));
     if (gradesPresent.length === 0) return [];
-    // Fill in every grade between the lowest and highest logged send, even ones
+    // Fill in every grade between the lowest and highest logged climb, even ones
     // with zero climbs, so the chart shows a continuous range rather than gaps.
     const minIdx = gIndex(gradesPresent[0]);
     const maxIdx = gIndex(gradesPresent[gradesPresent.length - 1]);
     return GRADES.slice(minIdx, maxIdx + 1).map((g) => {
       const row = { grade: g };
       ROPE_TYPES.forEach((t) => {
-        row[t.key] = sends.filter((c) => c.grade === g && c.type === t.key).length;
+        row[t.key] = bucketed.filter(({ climb, bucket }) => climb.grade === g && bucket === t.key).length;
       });
       return row;
     });

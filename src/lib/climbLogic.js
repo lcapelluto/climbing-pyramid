@@ -40,6 +40,22 @@ export const OUTCOMES = [
 export const BOULDER_OUTCOMES = OUTCOMES.filter((o) => o.key === "send" || o.key === "attempt");
 export const outcomeColor = (outcome) => (outcome === "send" ? "green" : outcome === "attempt" ? "red" : "yellow");
 
+// Analytics buckets a climb by what it *is*, not how it was logged: a lead "send" is a
+// redpoint by definition, so it counts under redpoint there. A lead take/worked is a
+// normal successful lead ascent, so it counts under lead. A lead "attempt" isn't a
+// completed ascent of either kind, so it's excluded from Analytics entirely. Toprope
+// only ever counts sends (unchanged, matches the pyramid view's definition of progress).
+export function analyticsType(c) {
+  if (c.type === "redpoint") return "redpoint";
+  if (c.type === "lead") {
+    if (c.outcome === "send") return "redpoint";
+    if (c.outcome === "take" || c.outcome === "worked") return "lead";
+    return null;
+  }
+  if (c.type === "toprope") return c.outcome === "send" ? "toprope" : null;
+  return null;
+}
+
 export const DEFAULT_SHAPE = [8, 4, 2, 1];
 export const DEFAULT_PYRAMID = { baseGrade: "9", shape: DEFAULT_SHAPE };
 export const DEFAULT_CONFIG = {
