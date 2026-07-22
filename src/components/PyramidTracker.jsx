@@ -247,7 +247,7 @@ export default function PyramidTracker({ uid }) {
             {isAnalytics
               ? "Climb analytics"
               : isBoulder
-              ? "Boulder climbs"
+              ? "Boulders"
               : `${topGrade} ${typeLabel(activeType)} pyramid`}
           </div>
         </div>
