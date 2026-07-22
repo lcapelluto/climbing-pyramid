@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut, Pencil } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Rectangle } from "recharts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
@@ -52,6 +52,8 @@ export default function PyramidTracker({ uid }) {
   const [levelGrade, setLevelGrade] = useState("9");
   const [climbsPage, setClimbsPage] = useState(0);
   const CLIMBS_PAGE_SIZE = 10;
+  const [editingClimbId, setEditingClimbId] = useState(null);
+  const [editNotes, setEditNotes] = useState("");
 
   const isAnalytics = activeType === "analytics";
   const isBoulder = activeType === "boulder";
@@ -61,6 +63,8 @@ export default function PyramidTracker({ uid }) {
 
   useEffect(() => {
     setClimbsPage(0);
+    setEditingClimbId(null);
+    setEditNotes("");
   }, [activeType]);
 
   useEffect(() => {
@@ -128,7 +132,43 @@ export default function PyramidTracker({ uid }) {
   }
 
   function removeClimbById(id) {
+    if (editingClimbId === id) {
+      setEditingClimbId(null);
+      setEditNotes("");
+    }
     persistClimbs(climbs.filter((c) => c.id !== id));
+  }
+
+  function startEditNotes(c) {
+    setError(null);
+    setEditingClimbId(c.id);
+    setEditNotes(c.notes || "");
+  }
+
+  function cancelEditNotes() {
+    setEditingClimbId(null);
+    setEditNotes("");
+  }
+
+  function saveEditNotes(id) {
+    const trimmedNotes = editNotes.trim();
+    if (trimmedNotes.length > NOTES_MAX_LENGTH) {
+      setError(`Notes must be ${NOTES_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+    setError(null);
+    persistClimbs(
+      climbs.map((c) => {
+        if (c.id !== id) return c;
+        if (!trimmedNotes) {
+          const { notes, ...rest } = c;
+          return rest;
+        }
+        return { ...c, notes: trimmedNotes };
+      })
+    );
+    setEditingClimbId(null);
+    setEditNotes("");
   }
 
   function advance() {
@@ -580,11 +620,45 @@ export default function PyramidTracker({ uid }) {
                       />
                       <span style={S.climbGrade}>{c.grade}</span>
                       <span style={S.climbDate}>{c.date}</span>
+                      {editingClimbId !== c.id && (
+                        <button aria-label="Edit notes" style={S.deleteBtn} onClick={() => startEditNotes(c)}>
+                          <Pencil size={14} />
+                        </button>
+                      )}
                       <button aria-label="Delete climb" style={S.deleteBtn} onClick={() => removeClimbById(c.id)}>
                         <Trash2 size={14} />
                       </button>
                     </div>
-                    {c.notes && <div style={S.climbNotes}>{c.notes}</div>}
+                    {editingClimbId === c.id ? (
+                      <div style={S.editNotesWrap}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <label style={S.formLabel}>Notes</label>
+                          <span style={S.notesCounter}>
+                            {editNotes.length}/{NOTES_MAX_LENGTH}
+                          </span>
+                        </div>
+                        <textarea
+                          style={S.textarea}
+                          value={editNotes}
+                          maxLength={NOTES_MAX_LENGTH}
+                          placeholder="Beta, conditions, how it felt…"
+                          autoFocus
+                          onChange={(e) => setEditNotes(e.target.value)}
+                        />
+                        <div style={S.editActions}>
+                          <button style={S.editCancelBtn} onClick={cancelEditNotes}>
+                            <X size={14} />
+                            Cancel
+                          </button>
+                          <button style={S.editSaveBtn} onClick={() => saveEditNotes(c.id)}>
+                            <Check size={14} />
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      c.notes && <div style={S.climbNotes}>{c.notes}</div>
+                    )}
                   </div>
                 ))
               )}
@@ -810,6 +884,34 @@ const S = {
     minHeight: 60,
   },
   notesCounter: { fontSize: 11, color: C.textMuted },
+  editNotesWrap: { marginTop: 8 },
+  editActions: { display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 },
+  editCancelBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    background: "transparent",
+    border: `1px solid ${C.cardBorder}`,
+    borderRadius: 8,
+    color: C.textMuted,
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "6px 10px",
+    cursor: "pointer",
+  },
+  editSaveBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    background: C.gold,
+    border: "none",
+    borderRadius: 8,
+    color: "#FFFDF8",
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "6px 10px",
+    cursor: "pointer",
+  },
   segmented: { display: "flex", gap: 6 },
   segmentBtn: {
     flex: 1,
