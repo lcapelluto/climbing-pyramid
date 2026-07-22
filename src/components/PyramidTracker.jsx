@@ -248,8 +248,14 @@ export default function PyramidTracker({ uid }) {
 
   const allClimbsForType = climbs
     ? [...climbs]
-        // Redpoints are lead sends, so they also show up in the lead climbs list.
-        .filter((c) => c.type === activeType || (activeType === "lead" && c.type === "redpoint"))
+        // Redpoints are lead sends, so they show up in the lead list, and a lead
+        // "send" is itself a redpoint by definition, so it shows up in that list too.
+        .filter(
+          (c) =>
+            c.type === activeType ||
+            (activeType === "lead" && c.type === "redpoint") ||
+            (activeType === "redpoint" && c.type === "lead" && c.outcome === "send")
+        )
         .filter((c) => !isBoulder || boulderFilterMode === "all" || c.date >= cutoffBoulder)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
     : [];

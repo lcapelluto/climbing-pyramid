@@ -68,13 +68,22 @@ export function threeMonthsAgoStr() {
 // sends overwrite the oldest non-green slot if one exists, else fill the next empty slot.
 // take/worked/attempt fill the next empty slot with their color.
 //
-// Redpoints are lead sends, so redpoint climbs also count toward the lead pyramid.
+// Redpoints are lead sends, so redpoint climbs also count toward the lead pyramid,
+// and — the other direction — a "send" logged directly as lead is itself a redpoint
+// by definition, so it also counts toward the redpoint pyramid.
 // And on lead, "take"/"worked" are the normal successful outcome (not a partial
 // attempt like they are for redpoint/toprope), so they fill green like a send would.
 export function computeSlots(grade, type, required, climbsList) {
   const isLead = type === "lead";
+  const isRedpoint = type === "redpoint";
   const relevant = climbsList
-    .filter((c) => c.grade === grade && (c.type === type || (isLead && c.type === "redpoint")))
+    .filter(
+      (c) =>
+        c.grade === grade &&
+        (c.type === type ||
+          (isLead && c.type === "redpoint") ||
+          (isRedpoint && c.type === "lead" && c.outcome === "send"))
+    )
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const slots = Array(required).fill(null);
   for (const c of relevant) {
