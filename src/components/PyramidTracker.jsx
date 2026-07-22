@@ -561,7 +561,7 @@ export default function PyramidTracker({ uid }) {
                     style={S.textarea}
                     value={logNotes}
                     maxLength={NOTES_MAX_LENGTH}
-                    placeholder="Beta, conditions, how it felt…"
+                    placeholder="Location, color…"
                     onChange={(e) => setLogNotes(e.target.value)}
                   />
                 </div>
@@ -641,7 +641,7 @@ export default function PyramidTracker({ uid }) {
                           style={S.textarea}
                           value={editNotes}
                           maxLength={NOTES_MAX_LENGTH}
-                          placeholder="Beta, conditions, how it felt…"
+                          placeholder="Location, color…"
                           autoFocus
                           onChange={(e) => setEditNotes(e.target.value)}
                         />
