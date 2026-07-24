@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut, Pencil } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut, Pencil, Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Rectangle } from "recharts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
@@ -16,6 +16,7 @@ import {
   BOULDER_GRADES,
   BOULDER_QUICK_GRADES,
   BOULDER_OUTCOMES,
+  REDPOINT_OUTCOMES,
   DEFAULT_CONFIG,
   todayStr,
   sixMonthsAgoStr,
@@ -58,8 +59,8 @@ export default function PyramidTracker({ uid }) {
 
   const isAnalytics = activeType === "analytics";
   const isBoulder = activeType === "boulder";
-  // Redpoints are lead sends with no takes — the outcome is always "send",
-  // so there's no result to choose (logOutcome resets to "send" on tab change).
+  // Redpoints are lead sends with no takes, so the only outcomes that apply are
+  // flash/send — see REDPOINT_OUTCOMES.
   const isRedpoint = activeType === "redpoint";
 
   useEffect(() => {
@@ -254,12 +255,12 @@ export default function PyramidTracker({ uid }) {
   const allClimbsForType = climbs
     ? [...climbs]
         // Redpoints are lead sends, so they show up in the lead list, and a lead
-        // "send" is itself a redpoint by definition, so it shows up in that list too.
+        // "send" or "flash" is itself a redpoint by definition, so it shows up in that list too.
         .filter(
           (c) =>
             c.type === activeType ||
             (activeType === "lead" && c.type === "redpoint") ||
-            (activeType === "redpoint" && c.type === "lead" && c.outcome === "send")
+            (activeType === "redpoint" && c.type === "lead" && (c.outcome === "send" || c.outcome === "flash"))
         )
         .filter((c) => !isBoulder || boulderFilterMode === "all" || c.date >= cutoffBoulder)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
@@ -539,31 +540,30 @@ export default function PyramidTracker({ uid }) {
                     onChange={(e) => setLogDate(e.target.value)}
                   />
                 </div>
-                {!isRedpoint && (
-                  <div style={{ marginBottom: 10 }}>
-                    <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
-                    <div style={S.segmented}>
-                      {(isBoulder ? BOULDER_OUTCOMES : OUTCOMES).map((o) => {
-                        const active = logOutcome === o.key;
-                        const color = o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
-                        return (
-                          <button
-                            key={o.key}
-                            onClick={() => setLogOutcome(o.key)}
-                            style={{
-                              ...S.segmentBtn,
-                              background: active ? color : "transparent",
-                              color: active ? "#F7F5F0" : C.textMuted,
-                              borderColor: active ? color : C.cardBorder,
-                            }}
-                          >
-                            {o.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
+                  <div style={S.segmented}>
+                    {(isBoulder ? BOULDER_OUTCOMES : isRedpoint ? REDPOINT_OUTCOMES : OUTCOMES).map((o) => {
+                      const active = logOutcome === o.key;
+                      const color =
+                        o.key === "flash" ? C.flash : o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
+                      return (
+                        <button
+                          key={o.key}
+                          onClick={() => setLogOutcome(o.key)}
+                          style={{
+                            ...S.segmentBtn,
+                            background: active ? color : "transparent",
+                            color: active ? "#F7F5F0" : C.textMuted,
+                            borderColor: active ? color : C.cardBorder,
+                          }}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
+                </div>
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                     <label style={S.formLabel}>Notes</label>
@@ -626,12 +626,16 @@ export default function PyramidTracker({ uid }) {
                 pagedClimbs.map((c) => (
                   <div key={c.id} style={S.climbRow}>
                     <div style={S.climbRowMain}>
-                      <span
-                        style={{
-                          ...S.dot,
-                          background: c.outcome === "send" ? C.green : c.outcome === "attempt" ? C.red : C.yellow,
-                        }}
-                      />
+                      {c.outcome === "flash" ? (
+                        <Star size={11} color={C.flash} fill={C.flash} style={{ flexShrink: 0 }} />
+                      ) : (
+                        <span
+                          style={{
+                            ...S.dot,
+                            background: c.outcome === "send" ? C.green : c.outcome === "attempt" ? C.red : C.yellow,
+                          }}
+                        />
+                      )}
                       <span style={S.climbGrade}>{c.grade}</span>
                       <span style={S.climbDate}>{c.date}</span>
                       {editingClimbId !== c.id && (
@@ -730,6 +734,7 @@ const C = {
   green: "#4F8B5B",
   red: "#C1503A",
   yellow: "#D9A62E",
+  flash: "#FFD700",
   inputBg: "#F1EDE2",
 };
 

@@ -33,8 +33,12 @@ Each user has exactly **one Firestore document**, at `users/{their uid}`:
   (`"10a" < "9"` alphabetically, which is wrong).
 - `type` is one of `redpoint` / `lead` / `toprope`. Each type has its own
   independent pyramid (own base grade, own progress) — they don't share tiers.
-- `outcome` is one of `send` / `take` / `worked` / `attempt`. Only `send` counts
-  toward completing a pyramid tier.
+- `outcome` is one of `flash` / `send` / `take` / `worked` / `attempt`. A `flash`
+  is a send on the first attempt. `send` and `flash` count toward completing a
+  pyramid tier (both fill a green box in `computeSlots()`); `flash` is otherwise
+  treated identically to `send` everywhere (box-overwrite, analytics bucketing,
+  redpoint/lead crossover) except that the climb history list shows a small
+  bright-yellow star next to flashed climbs.
 - **Nothing is normalized into per-climb Firestore documents.** All climbs for a
   user live in one array in one doc. This was a deliberate simplicity tradeoff
   for a single-user hobby app — revisit if this ever needs multi-writer
@@ -47,9 +51,11 @@ each box is *derived* from the climb log, not stored directly — see
 `computeSlots()` in `src/lib/climbLogic.js`. Rules, in order:
 
 1. Process that grade+type's climbs in chronological order.
-2. A `send` overwrites the **oldest non-green** box if one exists (i.e. it
-   resolves an existing yellow/red attempt into a success). Only if no
-   non-green box exists does it fill the next **empty** box green.
+2. A `send` or `flash` overwrites the **oldest non-green** box if one exists
+   (i.e. it resolves an existing yellow/red attempt into a success). Only if no
+   non-green box exists does it fill the next **empty** box green. (`flash` is
+   otherwise identical to `send` in this logic — the distinction only shows up
+   as a star icon in the climb history list.)
 3. `take`/`worked` fill the next empty box **yellow**. `attempt` fills the next
    empty box **red**.
 4. A tier's `remaining` (what's needed to advance the pyramid) counts **only
