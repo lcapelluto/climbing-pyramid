@@ -50,6 +50,7 @@ export default function PyramidTracker({ uid }) {
   const [filterMode, setFilterMode] = useState("recent");
   const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
   const [chartFilter, setChartFilter] = useState(() => new Set());
+  const [flashOnlyFilter, setFlashOnlyFilter] = useState(false);
   const [showLevel, setShowLevel] = useState(false);
   const [levelGrade, setLevelGrade] = useState("9");
   const [climbsPage, setClimbsPage] = useState(0);
@@ -197,14 +198,17 @@ export default function PyramidTracker({ uid }) {
   }
 
   // Analytics only covers rope types and buckets each climb by analyticsType(), not raw
-  // c.type — a lead "send" counts as redpoint, a lead take/worked counts as lead, and a
-  // lead "attempt" is excluded (see analyticsType() for the full rationale).
+  // c.type — a lead "send"/"flash" counts as redpoint, a lead take/worked counts as lead, and a
+  // lead "attempt" is excluded (see analyticsType() for the full rationale). Each type's count
+  // is further split into flash vs. non-flash (`${key}Flash`) so flashed climbs can be drawn as
+  // a distinct cross-hatched segment; the "Flashed" legend toggle restricts the whole chart to
+  // flash-only climbs, on top of whichever types are currently visible.
   const chartData = useMemo(() => {
     if (!climbs) return [];
     const visible = chartFilter.size === 0 ? ROPE_TYPES.map((t) => t.key) : ROPE_TYPES.filter((t) => chartFilter.has(t.key)).map((t) => t.key);
     const bucketed = climbs
       .map((c) => ({ climb: c, bucket: analyticsType(c) }))
-      .filter(({ bucket }) => bucket && visible.includes(bucket));
+      .filter(({ bucket, climb }) => bucket && visible.includes(bucket) && (!flashOnlyFilter || climb.outcome === "flash"));
     const gradesPresent = GRADES.filter((g) => bucketed.some(({ climb }) => climb.grade === g));
     if (gradesPresent.length === 0) return [];
     // Fill in every grade between the lowest and highest logged climb, even ones
@@ -214,11 +218,13 @@ export default function PyramidTracker({ uid }) {
     return GRADES.slice(minIdx, maxIdx + 1).map((g) => {
       const row = { grade: g };
       ROPE_TYPES.forEach((t) => {
-        row[t.key] = bucketed.filter(({ climb, bucket }) => climb.grade === g && bucket === t.key).length;
+        const atGrade = bucketed.filter(({ climb, bucket }) => climb.grade === g && bucket === t.key);
+        row[t.key] = atGrade.filter(({ climb }) => climb.outcome !== "flash").length;
+        row[`${t.key}Flash`] = atGrade.filter(({ climb }) => climb.outcome === "flash").length;
       });
       return row;
     });
-  }, [climbs, chartFilter]);
+  }, [climbs, chartFilter, flashOnlyFilter]);
 
   const cutoff = useMemo(() => sixMonthsAgoStr(), []);
   const cutoffBoulder = useMemo(() => threeMonthsAgoStr(), []);
@@ -343,6 +349,13 @@ export default function PyramidTracker({ uid }) {
                   </button>
                 );
               })}
+              <button
+                onClick={() => setFlashOnlyFilter((v) => !v)}
+                style={{ ...S.legendItem, opacity: flashOnlyFilter ? 1 : 0.4 }}
+              >
+                <Star size={11} color={C.flash} fill={C.flash} style={{ flexShrink: 0 }} />
+                <span style={S.legendLabel}>Flashed</span>
+              </button>
             </div>
             {chartData.length === 0 ? (
               <div style={{ color: C.textMuted, fontSize: 14 }}>Nothing logged yet. Log a climb to see your chart.</div>
@@ -350,6 +363,21 @@ export default function PyramidTracker({ uid }) {
               <div style={{ width: "100%", height: 260 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                    <defs>
+                      {ROPE_TYPES.map((t) => (
+                        <pattern
+                          key={t.key}
+                          id={`flashHatch-${t.key}`}
+                          width="6"
+                          height="6"
+                          patternUnits="userSpaceOnUse"
+                          patternTransform="rotate(45)"
+                        >
+                          <rect width="6" height="6" fill={CHART_COLORS[t.key]} />
+                          <line x1="0" y1="0" x2="0" y2="6" stroke={C.flash} strokeWidth={3} />
+                        </pattern>
+                      ))}
+                    </defs>
                     <CartesianGrid stroke={C.cardBorder} vertical={false} />
                     <XAxis
                       dataKey="grade"
@@ -365,7 +393,21 @@ export default function PyramidTracker({ uid }) {
                       width={36}
                       label={{ value: "climbs", angle: -90, position: "insideLeft", fill: C.textMuted, fontSize: 11 }}
                     />
-                    {ROPE_TYPES.map((t) => (
+                    {ROPE_TYPES.flatMap((t) => [
+                      // Flash bar is declared before the solid bar so it stacks below it.
+                      <Bar
+                        key={`${t.key}Flash`}
+                        dataKey={`${t.key}Flash`}
+                        stackId="climbs"
+                        fill={`url(#flashHatch-${t.key})`}
+                        name={`${t.label} (flash)`}
+                        barSize={16}
+                        shape={endRoundedBarShape(
+                          ROPE_TYPES.flatMap((rt) => [`${rt.key}Flash`, rt.key]),
+                          `${t.key}Flash`
+                        )}
+                        activeBar={false}
+                      />,
                       <Bar
                         key={t.key}
                         dataKey={t.key}
@@ -374,12 +416,12 @@ export default function PyramidTracker({ uid }) {
                         name={t.label}
                         barSize={16}
                         shape={endRoundedBarShape(
-                          ROPE_TYPES.map((rt) => rt.key),
+                          ROPE_TYPES.flatMap((rt) => [`${rt.key}Flash`, rt.key]),
                           t.key
                         )}
                         activeBar={false}
-                      />
-                    ))}
+                      />,
+                    ])}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
