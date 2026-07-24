@@ -420,11 +420,12 @@ export default function PyramidTracker({ uid }) {
                           return (
                             <button
                               key={i}
-                              aria-label={isGreen ? `${t.grade} sent` : `Log a ${boxOutcome} at ${t.grade}`}
+                              aria-label={isGreen ? `${t.grade} ${slot.isFlash ? "flashed" : "sent"}` : `Log a ${boxOutcome} at ${t.grade}`}
                               onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
                               style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
                             >
-                              {slot && slot.color === "green" && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
+                              {isGreen && slot.isFlash && <Star size={14} color="#F7F5F0" fill="#F7F5F0" />}
+                              {isGreen && !slot.isFlash && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
                               {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
                             </button>
                           );

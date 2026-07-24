@@ -113,7 +113,7 @@ export function computeSlots(grade, type, required, climbsList) {
     if (c.outcome === "send" || c.outcome === "flash" || (isLead && (c.outcome === "take" || c.outcome === "worked"))) {
       let idx = slots.findIndex((s) => s && s.color !== "green");
       if (idx === -1) idx = slots.findIndex((s) => s === null);
-      if (idx !== -1) slots[idx] = { color: "green", climbId: c.id };
+      if (idx !== -1) slots[idx] = { color: "green", climbId: c.id, isFlash: c.outcome === "flash" };
     } else {
       const idx = slots.findIndex((s) => s === null);
       if (idx !== -1) slots[idx] = { color: outcomeColor(c.outcome), climbId: c.id };
