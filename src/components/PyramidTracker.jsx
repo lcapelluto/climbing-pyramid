@@ -804,7 +804,7 @@ const S = {
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
     maxWidth: 480,
     margin: "0 auto",
-    minHeight: "100%",
+    minHeight: "100vh",
     position: "relative",
     display: "flex",
     flexDirection: "column",
