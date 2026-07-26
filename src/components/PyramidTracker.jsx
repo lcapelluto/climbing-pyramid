@@ -518,7 +518,12 @@ export default function PyramidTracker({ uid }) {
                       <BarChart data={boulderChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
                         <CartesianGrid stroke={C.cardBorder} vertical={false} />
                         <XAxis dataKey="grade" tick={{ fontSize: 11, fill: C.textMuted }} interval={0} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: C.textMuted }} width={28} />
+                        <YAxis
+                          allowDecimals={false}
+                          tick={{ fontSize: 11, fill: C.textMuted }}
+                          width={36}
+                          label={{ value: "climbs", angle: -90, position: "insideLeft", fill: C.textMuted, fontSize: 11 }}
+                        />
                         <Bar
                           dataKey="send"
                           stackId="boulders"
