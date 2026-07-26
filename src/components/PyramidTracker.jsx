@@ -71,12 +71,18 @@ export default function PyramidTracker({ uid }) {
   }, [activeType]);
 
   useEffect(() => {
-    const grades = isBoulder ? BOULDER_GRADES : LOG_GRADES;
-    setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
+    if (isBoulder) {
+      const grades = BOULDER_GRADES;
+      setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
+    } else if (config) {
+      // Default to the bottom of this type's pyramid — the grade most likely
+      // to need a manual/backfilled log.
+      setLogGrade(config[activeType].baseGrade);
+    }
     // Lead climbs are usually taken, not redpointed, so default the form to "Take".
     setLogOutcome(activeType === "lead" ? "take" : "send");
     setLogNotes("");
-  }, [activeType, isBoulder]);
+  }, [activeType, isBoulder, config?.[activeType]?.baseGrade]);
 
   useEffect(() => {
     let unsubscribe = () => {};
