@@ -74,7 +74,7 @@ export default function PyramidTracker({ uid }) {
     if (isBoulder) {
       const grades = BOULDER_GRADES;
       setLogGrade((g) => (grades.includes(g) ? g : grades[0]));
-    } else if (config) {
+    } else if (config && config[activeType]) {
       // Default to the bottom of this type's pyramid — the grade most likely
       // to need a manual/backfilled log.
       setLogGrade(config[activeType].baseGrade);
