@@ -291,6 +291,7 @@ export default function PyramidTracker({ uid }) {
     return BOULDER_GRADES.slice(minIdx, maxIdx + 1).map((g) => ({
       grade: g,
       send: allClimbsForType.filter((c) => c.grade === g && c.outcome === "send").length,
+      sendFlash: allClimbsForType.filter((c) => c.grade === g && c.outcome === "flash").length,
       attempt: allClimbsForType.filter((c) => c.grade === g && c.outcome === "attempt").length,
     }));
   }, [allClimbsForType, isBoulder]);
@@ -514,7 +515,7 @@ export default function PyramidTracker({ uid }) {
                     </button>
                   ))}
                 </div>
-                {boulderChartData.every((r) => r.send === 0 && r.attempt === 0) ? (
+                {boulderChartData.every((r) => r.send === 0 && r.sendFlash === 0 && r.attempt === 0) ? (
                   <div style={{ color: C.textMuted, fontSize: 14, marginTop: 8 }}>
                     Nothing logged yet. Tap a grade below to start.
                   </div>
@@ -522,6 +523,18 @@ export default function PyramidTracker({ uid }) {
                   <div style={{ width: "100%", height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={boulderChartData} margin={{ top: 4, right: 4, left: -20, bottom: 4 }}>
+                        <defs>
+                          <pattern
+                            id="flashHatch-boulderSend"
+                            width="6"
+                            height="6"
+                            patternUnits="userSpaceOnUse"
+                            patternTransform="rotate(45)"
+                          >
+                            <rect width="6" height="6" fill={C.green} />
+                            <line x1="0" y1="0" x2="0" y2="6" stroke={C.flash} strokeWidth={3} />
+                          </pattern>
+                        </defs>
                         <CartesianGrid stroke={C.cardBorder} vertical={false} />
                         <XAxis dataKey="grade" tick={{ fontSize: 11, fill: C.textMuted }} interval={0} />
                         <YAxis
@@ -530,22 +543,32 @@ export default function PyramidTracker({ uid }) {
                           width={36}
                           label={{ value: "climbs", angle: -90, position: "insideLeft", fill: C.textMuted, fontSize: 11 }}
                         />
+                        {/* Flash bar stacks below the solid send bar, same grouping as the analytics chart. */}
+                        <Bar
+                          dataKey="sendFlash"
+                          stackId="boulders"
+                          fill="url(#flashHatch-boulderSend)"
+                          name="Send (flash)"
+                          barSize={18}
+                          shape={endRoundedBarShape(["sendFlash", "send", "attempt"], "sendFlash")}
+                          activeBar={false}
+                        />
                         <Bar
                           dataKey="send"
                           stackId="boulders"
                           fill={C.green}
                           name="Send"
                           barSize={18}
-                          shape={endRoundedBarShape(["send", "attempt"], "send")}
+                          shape={endRoundedBarShape(["sendFlash", "send", "attempt"], "send")}
                           activeBar={false}
                         />
                         <Bar
                           dataKey="attempt"
                           stackId="boulders"
-                          fill={C.yellow}
+                          fill={C.red}
                           name="Attempt"
                           barSize={18}
-                          shape={endRoundedBarShape(["send", "attempt"], "attempt")}
+                          shape={endRoundedBarShape(["sendFlash", "send", "attempt"], "attempt")}
                           activeBar={false}
                         />
                       </BarChart>
