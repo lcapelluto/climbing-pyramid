@@ -25,6 +25,13 @@ import {
   analyticsType,
 } from "../lib/climbLogic";
 
+// The boulder chart's two legend-filterable series — flash isn't its own series here,
+// it's a subset of "send" (see boulderChartData), so it gets a flash-only toggle instead.
+const BOULDER_CHART_TYPES = [
+  { key: "send", label: "Send" },
+  { key: "attempt", label: "Attempt" },
+];
+
 // Bars are stacked per grade column, so which series forms the visible top of the bar
 // depends on which series have nonzero counts in that specific column. This shape rounds
 // only the top of the *last* key (in stack order, bottom to top) with a nonzero value.
@@ -51,6 +58,8 @@ export default function PyramidTracker({ uid }) {
   const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
   const [chartFilter, setChartFilter] = useState(() => new Set());
   const [flashOnlyFilter, setFlashOnlyFilter] = useState(false);
+  const [boulderChartFilter, setBoulderChartFilter] = useState(() => new Set());
+  const [boulderFlashOnlyFilter, setBoulderFlashOnlyFilter] = useState(false);
   const [showLevel, setShowLevel] = useState(false);
   const [levelGrade, setLevelGrade] = useState("9");
   const [climbsPage, setClimbsPage] = useState(0);
@@ -203,6 +212,21 @@ export default function PyramidTracker({ uid }) {
     });
   }
 
+  // Same "empty means show all" convention as chartFilter above.
+  const visibleBoulderTypes =
+    boulderChartFilter.size === 0
+      ? BOULDER_CHART_TYPES.map((t) => t.key)
+      : BOULDER_CHART_TYPES.filter((t) => boulderChartFilter.has(t.key)).map((t) => t.key);
+
+  function toggleBoulderChartFilter(key) {
+    setBoulderChartFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   // Analytics only covers rope types and buckets each climb by analyticsType(), not raw
   // c.type — a lead "send"/"flash" counts as redpoint, a lead take/worked counts as lead, and a
   // lead "attempt" is excluded (see analyticsType() for the full rationale). Each type's count
@@ -282,19 +306,28 @@ export default function PyramidTracker({ uid }) {
   // 3mo/All toggle scopes both the chart and the list below it — an intentional difference.
   const boulderChartData = useMemo(() => {
     if (!isBoulder) return [];
+    const visible =
+      boulderChartFilter.size === 0
+        ? BOULDER_CHART_TYPES.map((t) => t.key)
+        : BOULDER_CHART_TYPES.filter((t) => boulderChartFilter.has(t.key)).map((t) => t.key);
+    // Bucket by legend series — flash counts as "send" here (see BOULDER_CHART_TYPES) — then
+    // apply the type-visibility and flash-only legend filters, same convention as chartData above.
+    const bucketed = allClimbsForType
+      .map((c) => ({ climb: c, bucket: c.outcome === "attempt" ? "attempt" : c.outcome === "send" || c.outcome === "flash" ? "send" : null }))
+      .filter(({ bucket, climb }) => bucket && visible.includes(bucket) && (!boulderFlashOnlyFilter || climb.outcome === "flash"));
     // Only show the range of grades actually logged (lowest through highest),
     // not the full VB-V9 scale — gaps within that range still show as zero.
-    const gradesLogged = BOULDER_GRADES.filter((g) => allClimbsForType.some((c) => c.grade === g));
+    const gradesLogged = BOULDER_GRADES.filter((g) => bucketed.some(({ climb }) => climb.grade === g));
     if (gradesLogged.length === 0) return [];
     const minIdx = BOULDER_GRADES.indexOf(gradesLogged[0]);
     const maxIdx = BOULDER_GRADES.indexOf(gradesLogged[gradesLogged.length - 1]);
     return BOULDER_GRADES.slice(minIdx, maxIdx + 1).map((g) => ({
       grade: g,
-      send: allClimbsForType.filter((c) => c.grade === g && c.outcome === "send").length,
-      sendFlash: allClimbsForType.filter((c) => c.grade === g && c.outcome === "flash").length,
-      attempt: allClimbsForType.filter((c) => c.grade === g && c.outcome === "attempt").length,
+      send: bucketed.filter(({ climb }) => climb.grade === g && climb.outcome === "send").length,
+      sendFlash: bucketed.filter(({ climb }) => climb.grade === g && climb.outcome === "flash").length,
+      attempt: bucketed.filter(({ climb }) => climb.grade === g && climb.outcome === "attempt").length,
     }));
-  }, [allClimbsForType, isBoulder]);
+  }, [allClimbsForType, isBoulder, boulderChartFilter, boulderFlashOnlyFilter]);
 
   const climbsPageCount = Math.max(1, Math.ceil(allClimbsForType.length / CLIMBS_PAGE_SIZE));
   const pagedClimbs = allClimbsForType.slice(
@@ -514,6 +547,28 @@ export default function PyramidTracker({ uid }) {
                       {opt.label}
                     </button>
                   ))}
+                </div>
+                <div style={S.legendRow}>
+                  {BOULDER_CHART_TYPES.map((t) => {
+                    const active = visibleBoulderTypes.includes(t.key);
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => toggleBoulderChartFilter(t.key)}
+                        style={{ ...S.legendItem, opacity: active ? 1 : 0.4 }}
+                      >
+                        <span style={{ ...S.dot, background: t.key === "send" ? C.green : C.red }} />
+                        <span style={S.legendLabel}>{t.label}</span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setBoulderFlashOnlyFilter((v) => !v)}
+                    style={{ ...S.legendItem, opacity: boulderFlashOnlyFilter ? 1 : 0.4 }}
+                  >
+                    <Star size={11} color={C.flash} fill={C.flash} style={{ flexShrink: 0 }} />
+                    <span style={S.legendLabel}>Flashed</span>
+                  </button>
                 </div>
                 {boulderChartData.every((r) => r.send === 0 && r.sendFlash === 0 && r.attempt === 0) ? (
                   <div style={{ color: C.textMuted, fontSize: 14, marginTop: 8 }}>
