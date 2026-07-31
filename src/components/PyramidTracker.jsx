@@ -17,6 +17,7 @@ import {
   BOULDER_QUICK_GRADES,
   BOULDER_OUTCOMES,
   REDPOINT_OUTCOMES,
+  outcomesForType,
   DEFAULT_CONFIG,
   todayStr,
   sixMonthsAgoStr,
@@ -66,6 +67,7 @@ export default function PyramidTracker({ uid }) {
   const CLIMBS_PAGE_SIZE = 10;
   const [editingClimbId, setEditingClimbId] = useState(null);
   const [editNotes, setEditNotes] = useState("");
+  const [editOutcome, setEditOutcome] = useState("send");
 
   const isAnalytics = activeType === "analytics";
   const isBoulder = activeType === "boulder";
@@ -77,6 +79,7 @@ export default function PyramidTracker({ uid }) {
     setClimbsPage(0);
     setEditingClimbId(null);
     setEditNotes("");
+    setEditOutcome("send");
   }, [activeType]);
 
   useEffect(() => {
@@ -158,18 +161,19 @@ export default function PyramidTracker({ uid }) {
     persistClimbs(climbs.filter((c) => c.id !== id));
   }
 
-  function startEditNotes(c) {
+  function startEdit(c) {
     setError(null);
     setEditingClimbId(c.id);
     setEditNotes(c.notes || "");
+    setEditOutcome(c.outcome);
   }
 
-  function cancelEditNotes() {
+  function cancelEdit() {
     setEditingClimbId(null);
     setEditNotes("");
   }
 
-  function saveEditNotes(id) {
+  function saveEdit(id) {
     const trimmedNotes = editNotes.trim();
     if (trimmedNotes.length > NOTES_MAX_LENGTH) {
       setError(`Notes must be ${NOTES_MAX_LENGTH} characters or fewer.`);
@@ -179,11 +183,12 @@ export default function PyramidTracker({ uid }) {
     persistClimbs(
       climbs.map((c) => {
         if (c.id !== id) return c;
+        const updated = { ...c, outcome: editOutcome };
         if (!trimmedNotes) {
-          const { notes, ...rest } = c;
-          return rest;
+          delete updated.notes;
+          return updated;
         }
-        return { ...c, notes: trimmedNotes };
+        return { ...updated, notes: trimmedNotes };
       })
     );
     setEditingClimbId(null);
@@ -771,7 +776,7 @@ export default function PyramidTracker({ uid }) {
                       <span style={S.climbGrade}>{c.grade}</span>
                       <span style={S.climbDate}>{c.date}</span>
                       {editingClimbId !== c.id && (
-                        <button aria-label="Edit notes" style={S.deleteBtn} onClick={() => startEditNotes(c)}>
+                        <button aria-label="Edit climb" style={S.deleteBtn} onClick={() => startEdit(c)}>
                           <Pencil size={14} />
                         </button>
                       )}
@@ -781,6 +786,30 @@ export default function PyramidTracker({ uid }) {
                     </div>
                     {editingClimbId === c.id ? (
                       <div style={S.editNotesWrap}>
+                        <div style={{ marginBottom: 10 }}>
+                          <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
+                          <div style={S.segmented}>
+                            {outcomesForType(c.type).map((o) => {
+                              const active = editOutcome === o.key;
+                              const color =
+                                o.key === "flash" ? C.flash : o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
+                              return (
+                                <button
+                                  key={o.key}
+                                  onClick={() => setEditOutcome(o.key)}
+                                  style={{
+                                    ...S.segmentBtn,
+                                    background: active ? color : "transparent",
+                                    color: active ? "#F7F5F0" : C.textMuted,
+                                    borderColor: active ? color : C.cardBorder,
+                                  }}
+                                >
+                                  {o.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                           <label style={S.formLabel}>Notes</label>
                           <span style={S.notesCounter}>
@@ -796,11 +825,11 @@ export default function PyramidTracker({ uid }) {
                           onChange={(e) => setEditNotes(e.target.value)}
                         />
                         <div style={S.editActions}>
-                          <button style={S.editCancelBtn} onClick={cancelEditNotes}>
+                          <button style={S.editCancelBtn} onClick={cancelEdit}>
                             <X size={14} />
                             Cancel
                           </button>
-                          <button style={S.editSaveBtn} onClick={() => saveEditNotes(c.id)}>
+                          <button style={S.editSaveBtn} onClick={() => saveEdit(c.id)}>
                             <Check size={14} />
                             Save
                           </button>

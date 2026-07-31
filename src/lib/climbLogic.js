@@ -43,6 +43,14 @@ export const OUTCOMES = [
 export const BOULDER_OUTCOMES = OUTCOMES.filter((o) => o.key === "flash" || o.key === "send" || o.key === "attempt");
 // Redpoints are lead sends with no takes, so the only outcomes that make sense are flash/send.
 export const REDPOINT_OUTCOMES = OUTCOMES.filter((o) => o.key === "flash" || o.key === "send");
+// Which outcomes are valid for a climb depends on its *stored* type (c.type), not
+// whichever tab it's being viewed from — a lead climb keeps all 5 outcomes even when
+// it's showing up in the redpoint list as a crossover send/flash.
+export function outcomesForType(type) {
+  if (type === "boulder") return BOULDER_OUTCOMES;
+  if (type === "redpoint") return REDPOINT_OUTCOMES;
+  return OUTCOMES;
+}
 export const outcomeColor = (outcome) =>
   outcome === "send" || outcome === "flash" ? "green" : outcome === "attempt" ? "red" : "yellow";
 
