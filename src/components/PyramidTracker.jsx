@@ -511,7 +511,7 @@ export default function PyramidTracker({ uid }) {
                               onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
                               style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
                             >
-                              {isGreen && slot.isFlash && <Star size={14} color="#F7F5F0" fill="#F7F5F0" />}
+                              {isGreen && slot.isFlash && <Star size={14} color={C.flash} fill={C.flash} />}
                               {isGreen && !slot.isFlash && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
                               {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
                             </button>
