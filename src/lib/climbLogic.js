@@ -104,10 +104,10 @@ export function threeMonthsAgoStr() {
 // redpoint by definition, so it also counts toward the redpoint pyramid.
 // And on lead, "take"/"worked" are the normal successful outcome (not a partial
 // attempt like they are for redpoint/toprope), so they fill green like a send would.
-export function computeSlots(grade, type, required, climbsList) {
+function relevantClimbs(grade, type, climbsList) {
   const isLead = type === "lead";
   const isRedpoint = type === "redpoint";
-  const relevant = climbsList
+  return climbsList
     .filter(
       (c) =>
         c.grade === grade &&
@@ -116,9 +116,16 @@ export function computeSlots(grade, type, required, climbsList) {
           (isRedpoint && c.type === "lead" && (c.outcome === "send" || c.outcome === "flash")))
     )
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+}
+
+const isSuccessOutcome = (c, type) =>
+  c.outcome === "send" || c.outcome === "flash" || (type === "lead" && (c.outcome === "take" || c.outcome === "worked"));
+
+export function computeSlots(grade, type, required, climbsList) {
+  const relevant = relevantClimbs(grade, type, climbsList);
   const slots = Array(required).fill(null);
   for (const c of relevant) {
-    if (c.outcome === "send" || c.outcome === "flash" || (isLead && (c.outcome === "take" || c.outcome === "worked"))) {
+    if (isSuccessOutcome(c, type)) {
       let idx = slots.findIndex((s) => s && s.color !== "green");
       if (idx === -1) idx = slots.findIndex((s) => s === null);
       if (idx !== -1) slots[idx] = { color: "green", climbId: c.id, isFlash: c.outcome === "flash" };
@@ -128,4 +135,14 @@ export function computeSlots(grade, type, required, climbsList) {
     }
   }
   return slots;
+}
+
+// computeSlots() only ever fills `required` boxes — once every slot is green, further
+// successes at that grade have nowhere to go and are silently dropped. This returns those
+// dropped successes (oldest `required` successes claim the real boxes, same as
+// computeSlots, so anything beyond that is overflow) with their flash status, so the UI
+// can reveal them via dimmed extension boxes instead of hiding them entirely.
+export function overflowClimbs(grade, type, required, climbsList) {
+  const successes = relevantClimbs(grade, type, climbsList).filter((c) => isSuccessOutcome(c, type));
+  return successes.slice(required).map((c) => ({ id: c.id, isFlash: c.outcome === "flash" }));
 }

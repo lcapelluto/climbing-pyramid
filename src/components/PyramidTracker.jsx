@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut, Pencil, Star } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, TriangleAlert, Check, X, LogOut, Pencil, Star, Eye, EyeOff } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Rectangle } from "recharts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
@@ -23,6 +23,7 @@ import {
   sixMonthsAgoStr,
   threeMonthsAgoStr,
   computeSlots,
+  overflowClimbs,
   analyticsType,
 } from "../lib/climbLogic";
 
@@ -56,6 +57,7 @@ export default function PyramidTracker({ uid }) {
   const [logOutcome, setLogOutcome] = useState("send");
   const [logNotes, setLogNotes] = useState("");
   const [filterMode, setFilterMode] = useState("recent");
+  const [showExtended, setShowExtended] = useState(false);
   const [boulderFilterMode, setBoulderFilterMode] = useState("recent");
   const [chartFilter, setChartFilter] = useState(() => new Set());
   const [flashOnlyFilter, setFlashOnlyFilter] = useState(false);
@@ -268,16 +270,138 @@ export default function PyramidTracker({ uid }) {
     return filterMode === "all" ? climbs : climbs.filter((c) => c.date >= cutoff);
   }, [climbs, filterMode, cutoff]);
 
-  const tiers = useMemo(() => {
-    if (!pyramid || !filteredClimbs) return [];
+  // Splits `extendedTotal - required` dimmed slots evenly across both sides of a tier's
+  // required boxes, filling inside-out (closest to the required boxes first) so overflow
+  // sends read as the pyramid "growing" outward from what's actually required. When
+  // there's no required box to anchor the center (required === 0, i.e. the bonus rows
+  // above/below the pyramid) and the extension count is odd, a real box can't sit exactly
+  // center — so one virtual center dimmed box is carved out to fill first, keeping the
+  // remaining boxes symmetric on both sides instead of skewing one side wider.
+  function buildExtension(required, extendedTotal, overflow) {
+    const extra = Math.max(0, extendedTotal - required);
+    const hasCenter = required === 0 && extra % 2 === 1;
+    const sideExtra = hasCenter ? extra - 1 : extra;
+    const leftCount = Math.floor(sideExtra / 2);
+    const rightCount = sideExtra - leftCount;
+
+    const leftDimmed = Array.from({ length: leftCount }, () => ({ filled: false, isFlash: false }));
+    const rightDimmed = Array.from({ length: rightCount }, () => ({ filled: false, isFlash: false }));
+    const centerDimmed = hasCenter ? [{ filled: false, isFlash: false }] : [];
+
+    // Fill order: virtual center first (if any), then alternate left/right from the
+    // innermost position outward, assigning each overflow climb (oldest first) to the
+    // next box in that order — so each box's star reflects whether that specific
+    // overflow climb was a flash.
+    const order = [];
+    if (hasCenter) order.push(centerDimmed[0]);
+    for (let k = 0; k < Math.max(leftCount, rightCount); k++) {
+      if (k < leftCount) order.push(leftDimmed[leftCount - 1 - k]);
+      if (k < rightCount) order.push(rightDimmed[k]);
+    }
+    overflow.slice(0, extra).forEach((climb, i) => {
+      order[i].filled = true;
+      order[i].isFlash = climb.isFlash;
+    });
+
+    return { leftDimmed, centerDimmed, rightDimmed };
+  }
+
+  const { tiers, extraAbove, extraBelow } = useMemo(() => {
+    if (!pyramid || !filteredClimbs) return { tiers: [], extraAbove: null, extraBelow: null };
     const baseIdx = gIndex(pyramid.baseGrade);
-    return pyramid.shape.map((required, i) => {
+    const tiersOut = pyramid.shape.map((required, i) => {
       const grade = GRADES[baseIdx + i];
       const slots = computeSlots(grade, activeType, required, filteredClimbs);
       const done = slots.filter((s) => s && s.color === "green").length;
-      return { grade, required, slots, done, remaining: Math.max(0, required - done) };
+      const overflow = overflowClimbs(grade, activeType, required, filteredClimbs);
+      // The apex tier centers on a single required box, so it gets an odd extension
+      // count (7) to stay symmetric; the other tiers extend to the base tier's natural
+      // width (8) so extra sends at narrower tiers become visible too.
+      const isApex = i === pyramid.shape.length - 1;
+      const extendedTotal = Math.max(required, isApex ? 7 : 8);
+      const { leftDimmed, centerDimmed, rightDimmed } = buildExtension(required, extendedTotal, overflow);
+      return { grade, required, slots, done, remaining: Math.max(0, required - done), leftDimmed, centerDimmed, rightDimmed };
     });
+
+    // One bonus row below the base grade and one above the apex grade — neither is part
+    // of the pyramid's own requirement (required: 0), so they're rendered entirely as
+    // dimmed/extension boxes, giving visibility into sends just outside the pyramid's
+    // current range (e.g. a grade you've already outgrown, or one you've started dabbling
+    // in above the current top).
+    const belowIdx = baseIdx - 1;
+    const topIdx = baseIdx + pyramid.shape.length - 1;
+    const aboveIdx = topIdx + 1;
+    const extraBelow =
+      belowIdx >= 0
+        ? {
+            grade: GRADES[belowIdx],
+            required: 0,
+            slots: [],
+            ...buildExtension(0, 8, overflowClimbs(GRADES[belowIdx], activeType, 0, filteredClimbs)),
+          }
+        : null;
+    const extraAbove =
+      aboveIdx < GRADES.length
+        ? {
+            grade: GRADES[aboveIdx],
+            required: 0,
+            slots: [],
+            ...buildExtension(0, 7, overflowClimbs(GRADES[aboveIdx], activeType, 0, filteredClimbs)),
+          }
+        : null;
+
+    return { tiers: tiersOut, extraAbove, extraBelow };
   }, [pyramid, filteredClimbs, activeType]);
+
+  function renderTierRow(t) {
+    const boxOutcome = activeType === "lead" ? "take" : "send";
+    const dimmedBoxStyle = (filled) => ({
+      ...S.dimmedBox,
+      background: filled ? C.green : "transparent",
+      borderColor: filled ? C.green : C.cardBorder,
+      borderStyle: filled ? "solid" : "dashed",
+      opacity: filled ? 0.45 : 0.5,
+      cursor: filled ? "default" : "pointer",
+    });
+    const renderDimmedBox = (d, key) => (
+      <button
+        key={key}
+        aria-label={d.filled ? `${t.grade} additional send` : `Log a ${boxOutcome} at ${t.grade}`}
+        title={d.filled ? `Additional completed climb at ${t.grade}` : undefined}
+        onClick={d.filled ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
+        style={dimmedBoxStyle(d.filled)}
+      >
+        {d.filled && d.isFlash && <Star size={11} color={C.flash} fill={C.flash} />}
+      </button>
+    );
+    return (
+      <div key={t.grade} style={S.tierRow}>
+        <div style={S.tierGradeLabel}>{t.grade}</div>
+        <div style={S.boxGrid}>
+          {showExtended && t.leftDimmed.map((d, i) => renderDimmedBox(d, `ld-${i}`))}
+          {showExtended && t.centerDimmed.map((d, i) => renderDimmedBox(d, `cd-${i}`))}
+          {t.slots.map((slot, i) => {
+            const isGreen = slot && slot.color === "green";
+            const bg = !slot ? C.inputBg : slot.color === "green" ? C.green : slot.color === "red" ? C.red : C.yellow;
+            const border = !slot ? C.cardBorder : bg;
+            return (
+              <button
+                key={i}
+                aria-label={isGreen ? `${t.grade} ${slot.isFlash ? "flashed" : "sent"}` : `Log a ${boxOutcome} at ${t.grade}`}
+                onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
+                style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
+              >
+                {isGreen && slot.isFlash && <Star size={14} color={C.flash} fill={C.flash} />}
+                {isGreen && !slot.isFlash && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
+                {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
+              </button>
+            );
+          })}
+          {showExtended && t.rightDimmed.map((d, i) => renderDimmedBox(d, `rd-${i}`))}
+        </div>
+      </div>
+    );
+  }
 
   const complete = tiers.length > 0 && tiers.every((t) => t.remaining === 0);
   const topGrade = tiers.length ? tiers[tiers.length - 1].grade : pyramid?.baseGrade;
@@ -476,6 +600,14 @@ export default function PyramidTracker({ uid }) {
           <>
             {!isBoulder && (
               <div style={{ ...S.card, position: "relative" }}>
+                <button
+                  aria-label={showExtended ? "Hide extra boxes" : "Show extra boxes"}
+                  title={showExtended ? "Hide extra boxes" : "Show extra boxes"}
+                  style={S.extendedToggleBtn}
+                  onClick={() => setShowExtended((v) => !v)}
+                >
+                  {showExtended ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
                 <div style={S.filterToggle}>
                   {[
                     { key: "recent", label: "6 mo" },
@@ -495,31 +627,9 @@ export default function PyramidTracker({ uid }) {
                   ))}
                 </div>
                 <div style={S.pyramidWrap}>
-                  {[...tiers].reverse().map((t) => (
-                    <div key={t.grade} style={S.tierRow}>
-                      <div style={S.tierGradeLabel}>{t.grade}</div>
-                      <div style={S.boxGrid}>
-                        {t.slots.map((slot, i) => {
-                          const isGreen = slot && slot.color === "green";
-                          const bg = !slot ? C.inputBg : slot.color === "green" ? C.green : slot.color === "red" ? C.red : C.yellow;
-                          const border = !slot ? C.cardBorder : bg;
-                          const boxOutcome = activeType === "lead" ? "take" : "send";
-                          return (
-                            <button
-                              key={i}
-                              aria-label={isGreen ? `${t.grade} ${slot.isFlash ? "flashed" : "sent"}` : `Log a ${boxOutcome} at ${t.grade}`}
-                              onClick={isGreen ? undefined : () => logClimb(t.grade, activeType, todayStr(), boxOutcome)}
-                              style={{ ...S.box, background: bg, borderColor: border, cursor: isGreen ? "default" : "pointer" }}
-                            >
-                              {isGreen && slot.isFlash && <Star size={14} color={C.flash} fill={C.flash} />}
-                              {isGreen && !slot.isFlash && <Check size={16} color="#F7F5F0" strokeWidth={3} />}
-                              {slot && slot.color === "red" && <X size={15} color="#F7F5F0" strokeWidth={3} />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                  {showExtended && extraAbove && renderTierRow(extraAbove)}
+                  {[...tiers].reverse().map((t) => renderTierRow(t))}
+                  {showExtended && extraBelow && renderTierRow(extraBelow)}
                 </div>
 
                 {complete && (
@@ -953,7 +1063,7 @@ const S = {
   pyramidWrap: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 20 },
   tierRow: { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: "100%" },
   tierGradeLabel: { fontSize: 12, fontWeight: 600, color: C.textMuted },
-  boxGrid: { display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 6 },
+  boxGrid: { display: "flex", justifyContent: "center", alignItems: "center", flexWrap: "wrap", gap: 6 },
   box: {
     width: 32,
     height: 32,
@@ -965,6 +1075,18 @@ const S = {
     cursor: "pointer",
     padding: 0,
     transition: "background 0.15s ease, border-color 0.15s ease",
+  },
+  dimmedBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    border: "1px solid",
+    boxSizing: "border-box",
+    flexShrink: 0,
+    padding: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterToggle: {
     position: "absolute",
@@ -983,6 +1105,21 @@ const S = {
     padding: "4px 9px",
     fontSize: 11,
     fontWeight: 600,
+    cursor: "pointer",
+  },
+  extendedToggleBtn: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    zIndex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: C.inputBg,
+    border: "none",
+    borderRadius: 8,
+    padding: 6,
+    color: C.textMuted,
     cursor: "pointer",
   },
   advanceBox: {
