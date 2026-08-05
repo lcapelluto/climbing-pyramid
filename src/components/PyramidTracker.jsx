@@ -899,7 +899,7 @@ export default function PyramidTracker({ uid }) {
                         <div style={{ marginBottom: 10 }}>
                           <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
                           <div style={S.segmented}>
-                            {outcomesForType(c.type).map((o) => {
+                            {OUTCOMES.map((o) => {
                               const active = editOutcome === o.key;
                               const color =
                                 o.key === "flash" ? C.flash : o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
