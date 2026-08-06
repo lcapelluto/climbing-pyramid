@@ -16,7 +16,6 @@ import {
   BOULDER_GRADES,
   BOULDER_QUICK_GRADES,
   BOULDER_OUTCOMES,
-  REDPOINT_OUTCOMES,
   outcomesForType,
   DEFAULT_CONFIG,
   todayStr,
@@ -73,9 +72,6 @@ export default function PyramidTracker({ uid }) {
 
   const isAnalytics = activeType === "analytics";
   const isBoulder = activeType === "boulder";
-  // Redpoints are lead sends with no takes, so the only outcomes that apply are
-  // flash/send — see REDPOINT_OUTCOMES.
-  const isRedpoint = activeType === "redpoint";
 
   useEffect(() => {
     setClimbsPage(0);
@@ -419,13 +415,15 @@ export default function PyramidTracker({ uid }) {
 
   const allClimbsForType = climbs
     ? [...climbs]
-        // Redpoints are lead sends, so they show up in the lead list, and a lead
-        // "send" or "flash" is itself a redpoint by definition, so it shows up in that list too.
-        .filter(
-          (c) =>
-            c.type === activeType ||
-            (activeType === "lead" && c.type === "redpoint") ||
-            (activeType === "redpoint" && c.type === "lead" && (c.outcome === "send" || c.outcome === "flash"))
+        // Redpoints are lead sends, so they show up in the lead list (any outcome — a
+        // take/attempt is a normal partial lead result). The redpoint list only ever
+        // shows completed climbs, regardless of whether they were logged directly as a
+        // redpoint or crossed over from a lead send/flash — a take/worked/attempt is a
+        // failed redpoint burn, so it belongs in the pyramid's box grid, not this list.
+        .filter((c) =>
+          activeType === "redpoint"
+            ? (c.type === "redpoint" || c.type === "lead") && (c.outcome === "send" || c.outcome === "flash")
+            : c.type === activeType || (activeType === "lead" && c.type === "redpoint")
         )
         .filter((c) => !isBoulder || boulderFilterMode === "all" || c.date >= cutoffBoulder)
         .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
@@ -790,7 +788,7 @@ export default function PyramidTracker({ uid }) {
                 <div style={{ marginBottom: 10 }}>
                   <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
                   <div style={S.segmented}>
-                    {(isBoulder ? BOULDER_OUTCOMES : isRedpoint ? REDPOINT_OUTCOMES : OUTCOMES).map((o) => {
+                    {(isBoulder ? BOULDER_OUTCOMES : OUTCOMES).map((o) => {
                       const active = logOutcome === o.key;
                       const color =
                         o.key === "flash" ? C.flash : o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;
@@ -899,7 +897,7 @@ export default function PyramidTracker({ uid }) {
                         <div style={{ marginBottom: 10 }}>
                           <label style={{ ...S.formLabel, display: "block", marginBottom: 6 }}>Result</label>
                           <div style={S.segmented}>
-                            {OUTCOMES.map((o) => {
+                            {outcomesForType(c.type).map((o) => {
                               const active = editOutcome === o.key;
                               const color =
                                 o.key === "flash" ? C.flash : o.key === "send" ? C.green : o.key === "attempt" ? C.red : C.yellow;

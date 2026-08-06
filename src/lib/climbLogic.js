@@ -41,14 +41,13 @@ export const OUTCOMES = [
 ];
 // Boulder problems only ever get flashed, sent, or attempted — no take/worked (those are rope-specific).
 export const BOULDER_OUTCOMES = OUTCOMES.filter((o) => o.key === "flash" || o.key === "send" || o.key === "attempt");
-// Redpoints are lead sends with no takes, so the only outcomes that make sense are flash/send.
-export const REDPOINT_OUTCOMES = OUTCOMES.filter((o) => o.key === "flash" || o.key === "send");
+// All rope types (redpoint/lead/toprope) allow all 5 outcomes — a "take"/"attempt"
+// logged on the redpoint page is a failed redpoint burn (still a real result worth
+// tracking), it just doesn't fill a green box or show in the redpoint climb list.
 // Which outcomes are valid for a climb depends on its *stored* type (c.type), not
-// whichever tab it's being viewed from — a lead climb keeps all 5 outcomes even when
-// it's showing up in the redpoint list as a crossover send/flash.
+// whichever tab it's being viewed from.
 export function outcomesForType(type) {
   if (type === "boulder") return BOULDER_OUTCOMES;
-  if (type === "redpoint") return REDPOINT_OUTCOMES;
   return OUTCOMES;
 }
 export const outcomeColor = (outcome) =>
@@ -100,8 +99,11 @@ export function threeMonthsAgoStr() {
 // next empty slot. take/worked/attempt fill the next empty slot with their color.
 //
 // Redpoints are lead sends, so redpoint climbs also count toward the lead pyramid,
-// and — the other direction — a "send" or "flash" logged directly as lead is itself a
-// redpoint by definition, so it also counts toward the redpoint pyramid.
+// and — the other direction — *any* lead climb is also a redpoint attempt at that
+// grade, so it counts toward the redpoint pyramid too: a lead send/flash fills green
+// there (a clean redpoint), while a lead take/worked/attempt fills yellow/red via
+// isSuccessOutcome/outcomeColor below (a failed redpoint burn) — even though that same
+// take/worked climb fills green on the lead side, as a successful lead ascent.
 // And on lead, "take"/"worked" are the normal successful outcome (not a partial
 // attempt like they are for redpoint/toprope), so they fill green like a send would.
 function relevantClimbs(grade, type, climbsList) {
@@ -111,9 +113,7 @@ function relevantClimbs(grade, type, climbsList) {
     .filter(
       (c) =>
         c.grade === grade &&
-        (c.type === type ||
-          (isLead && c.type === "redpoint") ||
-          (isRedpoint && c.type === "lead" && (c.outcome === "send" || c.outcome === "flash")))
+        (c.type === type || (isLead && c.type === "redpoint") || (isRedpoint && c.type === "lead"))
     )
     .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
 }
